@@ -20,7 +20,7 @@ class NeuralNetwork(nn.Module):
         self.number_of_actions = 2
         self.gamma = 0.99
         self.final_epsilon = 0.0001
-        self.initial_epsilon = 0.1
+        self.initial_epsilon = 0.1 # 0.1
         self.number_of_iterations = 2000000
         self.replay_memory_size = 10000
         self.minibatch_size = 32
@@ -86,7 +86,7 @@ def train(model, start):
 
     # instantiate game
     game_state = GameState()
-    print(game_state)
+    #print(game_state)
 
     # initialize replay memory
     replay_memory = []
@@ -98,7 +98,7 @@ def train(model, start):
     image_data = resize_and_bgr2gray(image_data) # crop the floor and resize image to 84x84
     image_data = image_to_tensor(image_data)
     state = torch.cat((image_data, image_data, image_data, image_data)).unsqueeze(0) # define state to be the 3 channel version of the returned image
-    print(state.shape, 'state')
+    #print(state.shape, 'state')
 
     # initialize epsilon value
     epsilon = model.initial_epsilon
@@ -112,7 +112,7 @@ def train(model, start):
 
         #get output from neural network
         output = model(state)[0]
-        print(output, 'output')
+        #print(output, 'output')
 
         #initialize action
         action = torch.zeros([model.number_of_actions], dtype=torch.float32)
@@ -135,7 +135,11 @@ def train(model, start):
             action_index = action_index.cuda()
 
         action[action_index] = 1 #assign the selected action_index to 1 (get either [0, 1] for do nothing or [1, 0] for fly up)
-
+        print(action, 'action')
+        if action[1] == 1:
+            print("doing nothing")
+        else:
+            print("flying up")
         # get next state and reward
         image_data_1, reward, terminal = game_state.frame_step(action) #take the selected action and go to the next step
         image_data_1 = resize_and_bgr2gray(image_data_1)
@@ -143,9 +147,10 @@ def train(model, start):
         state_1 = torch.cat((state.squeeze(0)[1:, :, :], image_data_1)).unsqueeze(0) # define the new state
         action = action.unsqueeze(0)
         reward = torch.from_numpy(np.array([reward], dtype=np.float32)).unsqueeze(0)
-
+        #print(reward, 'reward')
         #save transition to replay memory
         replay_memory.append((state, action, reward, state_1, terminal)) # keep track of current state, action, reward, next state and is it the terminal action
+        #print(replay_memory, 'replay memory')
 
         # if replay memory is full, remove the oldest transition
         if len(replay_memory) > model.replay_memory_size:
@@ -175,9 +180,11 @@ def train(model, start):
         # Loss function = MSE(ground truth Q value - Q value obtained from Bellman's equation)
 
         # set y_j to r_j for terminal state, otherwise to r_j + gamma*max(Q) --> Bellman's equation
+       
         y_batch = torch.cat(tuple(reward_batch[i] if minibatch[i][4]
                           else reward_batch[i] + model.gamma * torch.max(output_1_batch[i])
                           for i in range(len(minibatch))))
+        #print(len(y_batch), 'y_batch')
         '''
         for i in range(len(minibatch)):
             if minibatch[i][4]:
@@ -187,6 +194,7 @@ def train(model, start):
         '''
         # extract ground truth Q value
         q_value = torch.sum(model(state_batch) * action_batch, dim=1)
+        #print(len(q_value), 'q_value')
 
         # PyTorch accumulated gradients by default, so they need to be reset in each pass
         optimizer.zero_grad()
