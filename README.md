@@ -1,4 +1,4 @@
-# Deep Q - Network to play Flappy Bird
+# PyTorch Implementation of Deep Q - Network to play Flappy Bird
 
 Reference Blog: https://www.toptal.com/deep-learning/pytorch-reinforcement-learning-tutorial
 
