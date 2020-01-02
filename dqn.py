@@ -93,6 +93,7 @@ def train(model, start):
     image_data = resize_and_bgr2gray(image_data)
     image_data = image_to_tensor(image_data)
     state = torch.cat((image_data, image_data, image_data, image_data)).unsqueeze(0)
+    print(state.shape, 'state')
 
     # initialize epsilon value
     epsilon = model.initial_epsilon

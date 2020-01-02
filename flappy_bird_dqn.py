@@ -97,8 +97,8 @@ def train(model, start):
     image_data, reward, terminal = game_state.frame_step(action) # returns the result of the action taken
     image_data = resize_and_bgr2gray(image_data) # crop the floor and resize image to 84x84
     image_data = image_to_tensor(image_data)
-    state = torch.cat((image_data, image_data, image_data)).unsqueeze(0) # define state to be the 3 channel version of the returned image
-
+    state = torch.cat((image_data, image_data, image_data, image_data)).unsqueeze(0) # define state to be the 3 channel version of the returned image
+    print(state.shape, 'state')
 
     # initialize epsilon value
     epsilon = model.initial_epsilon
@@ -112,6 +112,7 @@ def train(model, start):
 
         #get output from neural network
         output = model(state)[0]
+        print(output, 'output')
 
         #initialize action
         action = torch.zeros([model.number_of_actions], dtype=torch.float32)
@@ -174,12 +175,16 @@ def train(model, start):
         # Loss function = MSE(ground truth Q value - Q value obtained from Bellman's equation)
 
         # set y_j to r_j for terminal state, otherwise to r_j + gamma*max(Q) --> Bellman's equation
+        y_batch = torch.cat(tuple(reward_batch[i] if minibatch[i][4]
+                          else reward_batch[i] + model.gamma * torch.max(output_1_batch[i])
+                          for i in range(len(minibatch))))
+        '''
         for i in range(len(minibatch)):
             if minibatch[i][4]:
                 y_batch = torch.cat(tuple(reward_batch[i]))
             else:
-                y_batch = torch.cat(tuple(reward_batch[i]+model.gamma * torch.max(output_1_batch[i])))
-
+                y_batch = torch.cat(tuple(reward_batch[i] + model.gamma * torch.max(output_1_batch[i])))
+        '''
         # extract ground truth Q value
         q_value = torch.sum(model(state_batch) * action_batch, dim=1)
 
@@ -202,13 +207,45 @@ def train(model, start):
         iteration += 1
 
         if iteration % 25000 == 0:
-            torch.save(model, "pretrained_model/current_model_" + str(iteration) + ".pth")
+            torch.save(model, "pretrained_model/model_" + str(iteration) + ".pth")
 
         print("iteration:", iteration, "elapsed time:", time.time() - start, "epsilon:", epsilon, "action:",
               action_index.cpu().detach().numpy(), "reward:", reward.numpy()[0][0], "Q max:",
               np.max(output.cpu().detach().numpy()))
 
+def test(model):
+    game_state = GameState()
 
+    #initial action is do nothing
+    action = torch.zeros([model.number_of_actions], dtype=torch.float32)
+    action[0] = 1
+    image_data, reward, terminal = game_state.frame_step(action)
+    image_data = resize_and_bgr2gray(image_data)
+    image_data = image_to_tensor(image_data)
+    state = torch.cat((image_data, image_data, image_data, image_data)).unsqueeze(0)
+
+    while True:
+        # get output from neural network
+        output = model(state)[0]
+
+        action = torch.zeros([model.number_of_actions], dtype=torch.float32)
+        if torch.cuda.is_available():  # put on GPU if CUDA is available
+            action = action.cuda()
+
+        # get action
+        action_index = torch.argmax(output)
+        if torch.cuda.is_available():  # put on GPU if CUDA is available
+            action_index = action_index.cuda()
+        action[action_index] = 1
+
+        # get next state
+        image_data_1, reward, terminal = game_state.frame_step(action)
+        image_data_1 = resize_and_bgr2gray(image_data_1)
+        image_data_1 = image_to_tensor(image_data_1)
+        state_1 = torch.cat((state.squeeze(0)[1:, :, :], image_data_1)).unsqueeze(0)
+
+        # set state to be state_1
+        state = state_1
 
 
 def main(mode):
