@@ -135,7 +135,79 @@ def train(model, start):
 
         action[action_index] = 1 #assign the selected action_index to 1 (get either [0, 1] for do nothing or [1, 0] for fly up)
 
-        
+        # get next state and reward
+        image_data_1, reward, terminal = game_state.frame_step(action) #take the selected action and go to the next step
+        image_data_1 = resize_and_bgr2gray(image_data_1)
+        image_data_1 = image_to_tensor(image_data_1)
+        state_1 = torch.cat((state.squeeze(0)[1:, :, :], image_data_1)).unsqueeze(0) # define the new state
+        action = action.unsqueeze(0)
+        reward = torch.from_numpy(np.array([reward], dtype=np.float32)).unsqueeze(0)
+
+        #save transition to replay memory
+        replay_memory.append((state, action, reward, state_1, terminal)) # keep track of current state, action, reward, next state and is it the terminal action
+
+        # if replay memory is full, remove the oldest transition
+        if len(replay_memory) > model.replay_memory_size:
+            replay_memory.pop(0)
+
+        # epsilon annealing
+        epsilon = epsilon_decrements[iteration]
+
+        # sample random minibatch
+        minibatch = random.sample(replay_memory, min(len(replay_memory), model.minibatch_size)) # size of the minibatch will be the minimum of the current size of the replay memory and the maximum size of the minibatch to account for cases where the model has not seen enough state action pairs
+
+        # unpack minibatch
+        state_batch = torch.cat(tuple(d[0] for d in minibatch))
+        action_batch = torch.cat(tuple(d[1] for d in minibatch))
+        reward_batch = torch.cat(tuple(d[2] for d in minibatch))
+        state_1_batch = torch.cat(tuple(d[3] for d in minibatch))
+
+        if torch.cuda.is_available():  # put on GPU if CUDA is available
+            state_batch = state_batch.cuda()
+            action_batch = action_batch.cuda()
+            reward_batch = reward_batch.cuda()
+            state_1_batch = state_1_batch.cuda()
+
+        # get output for the next state
+        output_1_batch = model(state_1_batch)
+
+        # Loss function = MSE(ground truth Q value - Q value obtained from Bellman's equation)
+
+        # set y_j to r_j for terminal state, otherwise to r_j + gamma*max(Q) --> Bellman's equation
+        for i in range(len(minibatch)):
+            if minibatch[i][4]:
+                y_batch = torch.cat(tuple(reward_batch[i]))
+            else:
+                y_batch = torch.cat(tuple(reward_batch[i]+model.gamma * torch.max(output_1_batch[i])))
+
+        # extract ground truth Q value
+        q_value = torch.sum(model(state_batch) * action_batch, dim=1)
+
+        # PyTorch accumulated gradients by default, so they need to be reset in each pass
+        optimizer.zero_grad()
+
+        # returns a new tensor, detached from the current graph, the result will never require gradient
+        y_batch = y_batch.detach()
+
+        # calculate loss
+        loss = criterion(q_value, y_batch)
+
+        # do backward pass
+        loss.backward()
+        optimizer.step()
+
+        # set state to be state_1
+        state = state_1
+
+        iteration += 1
+
+        if iteration % 25000 == 0:
+            torch.save(model, "pretrained_model/current_model_" + str(iteration) + ".pth")
+
+        print("iteration:", iteration, "elapsed time:", time.time() - start, "epsilon:", epsilon, "action:",
+              action_index.cpu().detach().numpy(), "reward:", reward.numpy()[0][0], "Q max:",
+              np.max(output.cpu().detach().numpy()))
+
 
 
 
